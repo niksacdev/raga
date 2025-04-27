@@ -1,0 +1,16 @@
+// devcontainer.json for raga repo
+{
+  "name": "Raga Dev Container",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "settings": {
+    "terminal.integrated.shell.linux": "/bin/bash"
+  },
+  "extensions": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "dbaeumer.vscode-eslint"
+  ],
+  "postCreateCommand": "git --version && node --version && npm --version && python3 --version && pip3 --version && eslint --version"
+}
