@@ -76,6 +76,43 @@ To balance realism and simplicity:
 
 ---
 
+### Example: Human-in-the-Loop  Workflow
+
+**Scenario:**
+A factory operator wants to check and correct the status of a robotic arm in Warehouse 7.
+
+**Operator:**
+> Check the status of the robotic arm in warehouse 7.
+
+**Agent Planner:**
+> The latest telemetry indicates the end effector is misaligned (pose deviation detected). Would you like me to propose a new configuration?
+
+**Operator:**
+> Yes, fix it.
+
+**Agent Planner:**
+> Proposing new configuration... Calibration plan ready. Would you like to apply this configuration?
+
+**Operator:**
+> Yes, apply it.
+
+**Agent Planner:**
+> Configuration applied. The robotic arm in warehouse 7 is now aligned and operational. Would you like a summary report?
+
+**Operator:**
+> No, thank you.
+
+**Agent Planner:**
+> Acknowledged. Monitoring will continue. Let me know if you need further assistance.
+
+This workflow demonstrates:
+- Real-time telemetry ingestion and analysis
+- Human-in-the-loop validation for critical actions
+- Agent-driven diagnosis, planning, and execution
+- Auditable operator-agent communication
+
+---
+
 ## System Architecture
 
 RAGA is structured as a modular, multi-agent system with human-in-the-loop validation.
@@ -121,3 +158,13 @@ flowchart TD
 ```bash
 git clone https://github.com/<your-org>/raga.git
 cd raga
+```
+
+---
+
+## Usage
+
+
+1. Start the MCP Server (simulated or real telemetry)
+2. Deploy the Health Monitoring Agent, Calibration Management Agent, and Planner
+3. Use the Chat UI (CLI or web) to interact as a factory operator
