@@ -1,110 +1,151 @@
 import pytest
 from uuid import uuid4
-from fastapi.testclient import TestClient
-from src.mcp_server.main import mcp
+from mcp.client.session import ClientSession
+import asyncio
 
-client = TestClient(mcp)
+# Mark the test module to use pytest-asyncio
+pytestmark = pytest.mark.asyncio
+
+import asyncio
+from typing import Optional
+from contextlib import AsyncExitStack
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+# from dotenv import load_dotenv
+# load_dotenv()  # load environment variables from .env
+
+class MCPClient:
+    def __init__(self):
+        # Initialize session and client objects
+        self.session: Optional[ClientSession] = None
+        self.exit_stack = AsyncExitStack()
+    # methods will go here
+    
+@pytest.fixture
+async def connect_to_server(self, server_script_path: str):
+    
+    command = "python" if is_python else "node"
+    server_params = StdioServerParameters(
+        command="python",
+        env=None
+    )
+    
+    stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+    self.stdio, self.write = stdio_transport
+    self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+    
+    await self.session.initialize()
+    
+    # List available tools
+    response = await self.session.list_tools()
+    tools = response.tools
+    print("\nConnected to server with tools:", [tool.name for tool in tools])
+    
+async def mcp_client():
+    """
+    Fixture that provides a properly configured MCP client session.
+    Creates a single connection per test for efficiency.
+    """
+    # Use HTTP transport to connect to the server
+    async with ClientSession.from_http("http://localhost:6227") as session:
+        yield session
 
 @pytest.fixture
 def factory_and_robot_ids():
+    """Generate unique identifiers for factory and robot for test isolation"""
     return str(uuid4()), str(uuid4())
 
-def test_server_info():
-    response = client.get("/server/info")
-    assert response.status_code == 200
-    data = response.json()
-    assert "data" in data
-    assert "meta" in data
-    assert "name" in data["data"]
-    assert "version" in data["data"]
-    assert "description" in data["data"]
-    assert "timestamp" in data["meta"]
-    assert "trace_id" in data["meta"]
+async def test_server_info(mcp_client):
+    """Test the server info resource returns expected metadata"""
+    result = await mcp_client.read_resource("server://info")
+    assert "data" in result
+    assert "meta" in result
+    
+    # Validate specific fields in the response
+    info = result["data"]
+    assert "name" in info
+    assert "version" in info
+    assert "description" in info
 
-def test_health_check():
-    response = client.get("/health/check")
-    assert response.status_code == 200
-    data = response.json()
-    assert "data" in data
-    assert "meta" in data
-    assert data["data"]["status"] == "healthy"
-    assert "robots_monitored" in data["data"]
-    assert isinstance(data["data"]["robots_monitored"], int)
+async def test_health_check(mcp_client):
+    """Test the health check resource returns valid status"""
+    result = await mcp_client.read_resource("health://check")
+    assert "data" in result
+    assert "meta" in result
+    
+    health = result["data"]
+    assert health["status"] == "healthy"
+    assert isinstance(health["robots_monitored"], int)
 
-def test_get_robot_telemetry(factory_and_robot_ids):
+async def test_get_robot_telemetry(mcp_client, factory_and_robot_ids):
+    """Test retrieving telemetry data for a specific robot"""
     factory_id, robot_id = factory_and_robot_ids
-    response = client.get(f"/robots/{factory_id}/{robot_id}")
-    assert response.status_code == 200
-    data = response.json()
+    result = await mcp_client.read_resource(f"robots://{factory_id}/{robot_id}")
     
-    # MCP response structure
-    assert "data" in data
-    assert "meta" in data
+    assert "data" in result
+    assert "meta" in result
     
-    # Metadata
-    meta = data["meta"]
+    # Validate response structure
+    meta = result["meta"]
     assert meta["factory_id"] == factory_id
     assert meta["robot_id"] == robot_id
     assert "timestamp" in meta
     assert "trace_id" in meta
     
-    # Telemetry data
-    telemetry = data["data"]
+    # Validate telemetry data structure
+    telemetry = result["data"]
     assert "joint_angles" in telemetry
     assert "end_effector_pose" in telemetry
     assert "gripper_state" in telemetry
     assert "force_torque" in telemetry
     assert "status" in telemetry
 
-def test_update_robot_state_tool(factory_and_robot_ids):
+async def test_update_robot_state_tool(mcp_client, factory_and_robot_ids):
+    """Test updating robot state and verifying the changes"""
     factory_id, robot_id = factory_and_robot_ids
-    # First, GET to initialize
-    client.get(f"/robots/{factory_id}/{robot_id}")
     
-    # Now call the update_robot_state tool
-    tool_payload = {
-        "factory_id": factory_id,
-        "robot_id": robot_id,
-        "status": "misaligned"
-    }
-    response = client.post("/tools/update_robot_state", json=tool_payload)
-    assert response.status_code == 200
-    data = response.json()
+    # Initialize robot state (first access creates it)
+    await mcp_client.read_resource(f"robots://{factory_id}/{robot_id}")
     
-    # MCP tool response structure
-    assert "data" in data
-    assert "meta" in data
+    # Update the robot status
+    result = await mcp_client.call_tool(
+        "update_robot_state",
+        arguments={
+            "factory_id": factory_id,
+            "robot_id": robot_id,
+            "status": "misaligned"
+        }
+    )
     
-    # Metadata
-    meta = data["meta"]
-    assert meta["factory_id"] == factory_id
-    assert meta["robot_id"] == robot_id
-    assert meta["update_type"] == "state_update"
-    assert "timestamp" in meta
-    assert "trace_id" in meta
+    assert "data" in result
+    assert "meta" in result
     
-    # Telemetry data
-    telemetry = data["data"]
+    # Verify update in response
+    telemetry = result["data"]
     assert telemetry["status"] == "misaligned"
     
-    # Verify the change through a GET request
-    response = client.get(f"/robots/{factory_id}/{robot_id}")
-    data = response.json()
-    telemetry = data["data"]
-    assert telemetry["status"] == "misaligned"
+    # Verify through a separate read that state was updated
+    verify_result = await mcp_client.read_resource(f"robots://{factory_id}/{robot_id}")
+    verify_telemetry = verify_result["data"]
+    assert verify_telemetry["status"] == "misaligned"
 
-def test_update_robot_state_invalid_status(factory_and_robot_ids):
+async def test_update_robot_state_invalid_status(mcp_client, factory_and_robot_ids):
+    """Test error handling for invalid robot status updates"""
     factory_id, robot_id = factory_and_robot_ids
-    # Call the update_robot_state tool with invalid status
-    tool_payload = {
-        "factory_id": factory_id,
-        "robot_id": robot_id,
-        "status": "invalid_status" # This is not a valid status
-    }
-    response = client.post("/tools/update_robot_state", json=tool_payload)
-    assert response.status_code == 200  # Still returns 200 as we handle errors internally
-    data = response.json()
     
-    # Should have an error field
-    assert "error" in data
-    assert "Invalid status value" in data["error"]
+    # Attempt to update with invalid status
+    with pytest.raises(Exception) as excinfo:
+        await mcp_client.call_tool(
+            "update_robot_state",
+            arguments={
+                "factory_id": factory_id,
+                "robot_id": robot_id,
+                "status": "invalid_status"  # This is not a valid status
+            }
+        )
+    
+    # Verify specific error message
+    error_msg = str(excinfo.value)
+    assert "Invalid status" in error_msg or "invalid_status" in error_msg

@@ -14,13 +14,18 @@ RUN apt-get update \
         cd .. && rm -rf git-$GIT_VERSION v$GIT_VERSION.zip \
     )
 
-# Install Node.js, npm, and eslint
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
-    && npm install -g eslint
-
 # Install Python 3 and pip3
 RUN apt-get install -y python3 python3-pip
+
+# Install uv (fast Python package installer)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+# Add entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Set default shell
 SHELL ["/bin/bash", "-c"]

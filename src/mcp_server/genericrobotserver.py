@@ -1,10 +1,7 @@
-from starlette.applications import Starlette
-from starlette.routing import Mount, Route
-from starlette.responses import JSONResponse
 from mcp.server.fastmcp import FastMCP
 from typing import Dict, Any, List, Optional
-from src.mcp_server.simulator import SimulatorTelemetryProvider
-from src.mcp_server.models import GripperOpenState
+from mcp_server.simulator import SimulatorTelemetryProvider
+from mcp_server.models import GripperOpenState
 import logging
 import uuid
 
@@ -162,38 +159,7 @@ async def health_check() -> Dict[str, Any]:
         }
     }
 
-# Add Starlette app with MCP SSE mounted
-async def root_endpoint(request):
-    """Serve a simple root endpoint for the main application"""
-    return JSONResponse({
-        "name": "RAGA Robot Telemetry API",
-        "version": "1.0.0",
-        "description": "Use the /mcp path to access the Model Context Protocol endpoints"
-    })
-
-# Create a Starlette application with proper routing
-app = Starlette(routes=[
-    # Root endpoint
-    Route('/', endpoint=root_endpoint),
-    # Mount the MCP SSE server at /mcp
-    Mount('/mcp', app=mcp.sse_app()),
-])
-
 if __name__ == "__main__":
-    logger.info("Starting MCP server on port 8000")
-    # Use asyncio instead of uvicorn directly
-    import asyncio
-    from starlette.middleware.cors import CORSMiddleware
-    
-    # Add CORS middleware for browser clients
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # In production, restrict this to specific origins
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    
-    # Run the server using Starlette's built-in server
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    logger.info("Starting MCP server on port 6227")
+    mcp.run()
+    # mcp.run(transport="stdio")
