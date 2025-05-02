@@ -1,12 +1,15 @@
-from abc import ABC, abstractmethod
+import abc
 from .models import TelemetryData, EndEffectorPose, GripperState, ForceTorque, GripperOpenState
-from datetime import datetime
 import random
+import datetime
+import math
 
-class TelemetryProvider(ABC):
-    @abstractmethod
+
+class TelemetryProvider(abc.ABC):
+    @abc.abstractmethod
     def get_telemetry(self) -> TelemetryData:
         pass
+
 
 class SimulatorTelemetryProvider(TelemetryProvider):
     def __init__(self, num_joints: int = 6):
@@ -14,7 +17,8 @@ class SimulatorTelemetryProvider(TelemetryProvider):
 
     def get_telemetry(self) -> TelemetryData:
         # Simulate joint angles (degrees)
-        joint_angles = [random.uniform(-180, 180) for _ in range(self.num_joints)]
+        joint_angles = [random.uniform(-180, 180)
+                        for _ in range(self.num_joints)]
         # Simulate end effector pose
         pose = EndEffectorPose(
             x=random.uniform(400, 600),
@@ -26,7 +30,8 @@ class SimulatorTelemetryProvider(TelemetryProvider):
         )
         # Simulate gripper state
         gripper = GripperState(
-            is_open=random.choice([GripperOpenState.OPEN, GripperOpenState.CLOSED]),
+            is_open=random.choice(
+                [GripperOpenState.OPEN, GripperOpenState.CLOSED]),
             force=random.uniform(0, 100)
         )
         # Simulate force/torque
@@ -39,12 +44,21 @@ class SimulatorTelemetryProvider(TelemetryProvider):
             tz=random.gauss(0, 0.5)
         )
         # Simulate status
-        status = random.choices(['ok', 'misaligned', 'error'], weights=[0.9, 0.08, 0.02])[0]
+        status_choices = ['ok', 'misaligned', 'error']
+        status = random.choices(
+            status_choices, weights=[0.9, 0.08, 0.02])[0]
+        # Ensure status is a literal value, not just a string
+        if status == 'ok':
+            status_literal = 'ok'
+        elif status == 'misaligned':
+            status_literal = 'misaligned'
+        else:
+            status_literal = 'error'
         return TelemetryData(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.datetime.utcnow(),
             joint_angles=joint_angles,
             end_effector_pose=pose,
             gripper_state=gripper,
             force_torque=force_torque,
-            status=status
+            status=status_literal
         )
