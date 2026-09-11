@@ -1,170 +1,64 @@
-# RAGA - Robotic Arm Gripper Agents
-**Human-in-the-Loop, AI-Augmented Factory Robotics Agents**
+# RAGA — Robotic Arm Gripper Agents
 
----
+A local MCP telemetry simulator for exploring evidence-based assistance to robot operators.
 
-## Problem Formulation
+**Status (2026-09-11): early prototype; Phase 1 is partial.** RAGA generates synthetic robot snapshots and exposes them through MCP resources and tools. It does not detect misalignment, diagnose faults, control a robot, or implement human approval. None of the research hypotheses below has been validated.
 
-Modern factory floors increasingly rely on robotic arms for precision tasks such as assembly, welding, and material handling. However, operational challenges arise:
+## Run the local demo
 
-- **End effector misalignments** causing defective operations or quality issues,
-- **Calibration drift** due to environmental conditions, payload changes, mechanical wear,
-- **Cognitive overload** on human operators monitoring complex telemetry,
-- **Risk of incorrect recalibrations** without thorough diagnosis and human validation.
+Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/getting-started/installation/). No Docker, Kubernetes, Azure account, model key, or robot is required.
 
-> **Problem Statement:**  
-> How to augment a factory operator with intelligent agents that monitor, reason about, and recommend corrective actions — improving efficiency, safety, and resilience while preserving human authority over final decisions.
+```bash
+git clone https://github.com/niksacdev/raga.git
+cd raga
+uv sync --locked
+uv run --locked python main.py
+uv run --locked pytest -q
+uv run --locked pip-audit
+```
 
----
+The demo starts a simulator subprocess over **stdio**, reads a synthetic snapshot, changes its X coordinate in memory, lists cached robots, prints a simulation-only prompt, and exits. State is discarded when the process exits. No network listener or model call is started. First-time dependency installation requires network access.
 
-## Hypotheses and Experiments 
-This project follows a **Hypothesis-Driven Development (HDD)** approach. Each phase is structured as an experiment to validate specific hypotheses.
+To attach an MCP-compatible host, configure its command as `uv`, arguments as `run --locked python -m src.mcp_server.genericrobotserver`, and working directory as your RAGA checkout. Tools change simulated state without an approval step; approval enforcement is future work. The host may send resource/tool contents to its model provider: use synthetic identifiers and data only.
 
----
+## What is implemented
 
-### Hypothesis 1: Telemetry Ingestion Enables Accurate Pose Deviation Detection
-> **Real-time telemetry ingestion through an Model Context Protocol (MCP) Server enables accurate detection of robotic arm pose deviations and gripper misalignments.**
+| Capability | Status and evidence |
+| --- | --- |
+| Synthetic six-joint telemetry | Implemented in `src/mcp_server/simulator.py`; no kinematics or reference pose |
+| MCP resources, tools and prompt | Implemented in `src/mcp_server/genericrobotserver.py`; on-demand cached snapshots, not streaming |
+| Client/server round trip | Implemented in `src/mcp_client/client.py`; SDK stdio lifecycle and demo |
+| Validated, atomic simulated updates | Implemented; invalid updates preserve state, IDs and cache size are bounded |
+| Regression checks | `tests/test_simulator.py`, `tests/test_mcp_integration.py`; protocol and state invariants |
+| Deviation detector and monitoring agent | **Planned**; random status labels are not diagnostic predictions |
+| LLM diagnosis, calibration planner, supervisor UI | **Planned**; no model integration or approval/audit workflow |
+| A2A, ROS 2, real robots, deployment manifests | **Planned**; no implementation |
 
-**Experiment 1:**
-- Build an MCP Server emitting simulated robotic telemetry (joint angles, forces, end effector pose).
-- Health Monitoring Agent ingests and processes telemetry streams.
+The original implementation dates to April–May 2025. The September 2026 update repairs runtime and data-integrity issues and aligns documentation; it does not complete the proposed agent phases.
 
-**Expected Outcomes:**
-- 90% correct detection rate for pose deviations greater than 2mm/2°.
-- Schema mapping succeeds without data loss.
+## Problem and hypotheses
 
----
+Operators need to distinguish sensor noise, fixture problems and calibration drift before deciding on an intervention. RAGA's proposed contribution is a small, auditable diagnostic assistant grounded in telemetry and maintenance evidence. It is not a robot foundation model or a safety controller.
 
-### Hypothesis 2: Cognitive Augmentation Improves Diagnostic and Planning Quality
-> **Azure AI Foundry-hosted LLMs augment agent reasoning, improving misalignment diagnosis and recalibration planning.**
+1. **Telemetry and detection:** can a deterministic detector identify deviations against a reference pose? The original target was at least 90% detection above 2 mm / 2°. This remains an untested experimental target, not an OEM tolerance or achieved result. Establish labeled fixtures, false-alarm limits and frame conventions first.
+2. **Diagnostic assistance:** does an LLM improve operator diagnosis over the same evidence and rules? The original 15–30% accuracy improvement, under-3-second response, and over-80% operator preference are untested targets. Define relative versus absolute improvement and measure harmful recommendations, abstention, cost and latency before claiming benefit.
+3. **Coordination:** does A2A improve a real multi-owner workflow over a single process? No messaging or experiment exists. Introduce it only after simpler orchestration has a measured limitation.
 
-**Experiment 2:**
-- Agents selectively call LLM endpoints for diagnostics and plan suggestions.
-- Compare baseline rule-based vs LLM-augmented agent outputs.
+The [roadmap](docs/capability_evolution.md) defines the experiments and gates. The [market assessment](docs/market_assessment_2026-09.md) separates public evidence from the proposed value proposition: general robotics intelligence is increasingly supplied by major platforms; a focused, independently evaluated operator workflow is still a hypothesis worth testing.
 
-**Expected Outcomes:**
-- 15–30% improvement in diagnosis accuracy.
-- Model query turnaround within 3 seconds.
-- Human Supervisor preference for LLM-augmented responses in >80% of test cases.
-
----
-
-### Hypothesis 3: Agent-to-Agent Coordination Enables Dynamic Calibration Workflow
-> **Structured Agent-to-Agent (A2A) messaging enables dynamic task delegation and collaboration.**
-
-**Experiment 3:**
-- Implement A2A protocol messaging between Health Monitoring and Calibration Manager Agents.
-- Simulate multiple simultaneous pose deviation events.
-
-**Expected Outcomes:**
-- Agents dynamically delegate tasks and propose coordinated calibration plans.
-- No direct synchronous function calling between agents — only message passing.
-- Instrumentation of Agent-Agent Communication to enable diagnosis and recovery.
-
----
-
-## Simulation Assumptions
-
-The RAGA MCP Server simulates robotic telemetry streams to validate agent ingestion and reasoning workflows (not connecting to physical robots).
-
-To balance realism and simplicity:
-- **Pose deviation and gripper misalignment** are simulated based on common robotic tolerance thresholds (e.g., UR, KUKA, ABB standards).
-- **Gaussian noise** is injected into force, torque, and pose telemetry to mimic sensor imperfections.
-- **Telemetry update frequency** is simplified to slow intervals (1 event every 2–5 seconds) for Phase 1, with future work to support higher sampling rates (~10–100Hz).
-
-> See [Simulation Assumptions](docs/simulation_assumptions.md) for details.
-
----
-
-### Example: Human-in-the-Loop  Workflow
-
-**Scenario:**
-A factory operator wants to check and correct the status of a robotic arm in Warehouse 7.
-
-**Operator:**
-> Check the status of the robotic arm in warehouse 7.
-
-**Agent Planner:**
-> The latest telemetry indicates the end effector is misaligned (pose deviation detected). Would you like me to propose a new configuration?
-
-**Operator:**
-> Yes, fix it.
-
-**Agent Planner:**
-> Proposing new configuration... Calibration plan ready. Would you like to apply this configuration?
-
-**Operator:**
-> Yes, apply it.
-
-**Agent Planner:**
-> Configuration applied. The robotic arm in warehouse 7 is now aligned and operational. Would you like a summary report?
-
-**Operator:**
-> No, thank you.
-
-**Agent Planner:**
-> Acknowledged. Monitoring will continue. Let me know if you need further assistance.
-
-This workflow demonstrates:
-- Real-time telemetry ingestion and analysis
-- Human-in-the-loop validation for critical actions
-- Agent-driven diagnosis, planning, and execution
-- Auditable operator-agent communication
-
----
-
-## System Architecture
-
-RAGA is structured as a modular, multi-agent system with human-in-the-loop validation.
-
-- **Operations Coordinator (aka Planner)**: Receives goals or events, decides which agent(s) to activate, manages task decomposition, skill selection, reasoning flow.
-- **Health Monitoring Agent**: Monitors telemetry for gripper misalignments.
-- **MCP Server**: Emits robotic telemetry (joint states, force readings, end effector pose).
-- **Calibration Management Agent**: Plans recalibration strategies based on alerts.
-- **Azure AI Foundry-hosted LMs**: Language models Provide cognitive reasoning assistance when required.
-- **Chat UI**: Human Supervisor reviews alerts, queries agents, and confirms actions.
-- **A2A Messaging**: Structured REST API messages handle agent-agent collaboration.
+## Architecture today
 
 ```mermaid
-flowchart TD
-  Operator(Factory Operator)<--> ChatUI
-  ChatUI --> Planner
-  Planner --> HM(Health Monitoring Agent)
-  Planner --> CM(Calibration Management Agent)
-  Planner -->|Optional LM Query| Foundry(Azure AI Foundry Models)
-  MCP[MCP Server] <--> HM(Health Monitoring Agent)
-  CM -->|Optional LM Query| Foundry(Azure AI Foundry Models)
-  HM -->|Optional LM Query| Foundry(Azure AI Foundry Models)
-```
----
-## Quick Links
-
-- [System Components](docs/system_components.md)
-- [Experiments and Expected Outcomes](docs/capability_evolution.md)
-- [Deployment Plan](docs/deployment_plan.md)
-- [Simulation Assumptions](docs/simulation_assumptions.md)
----
-
-## Using This Sample
-
-### Prerequisites
-- Docker (and Kubernetes)
-- Python 3.10+ (for CLI utilities)
-- (Optional) Azure credentials for AI Foundry model queries
-
-### Steps
-
-**1. Clone the Repository**
-```bash
-git clone https://github.com/<your-org>/raga.git
-cd raga
+flowchart LR
+    Demo[Local Python client] <-->|MCP over stdio| Server[Simulator server]
+    Server --> Cache[Bounded in-memory snapshots]
+    Generator[Synthetic generator] --> Cache
 ```
 
----
+See [system components](docs/system_components.md), [simulation assumptions](docs/simulation_assumptions.md), and [deployment plan](docs/deployment_plan.md) for boundaries and future work.
 
-## Usage
+## Public repository and security
 
+Use only synthetic data. This sample has no authentication, tenant isolation, durable audit trail or hardware safety system. IDs are lookup keys, not access permissions. Do not expose it as a network service or connect actuators. Review [SECURITY.md](SECURITY.md) and the [dated audit](docs/security_review_2026-09.md) before extending it.
 
-1. Start the MCP Server (simulated or real telemetry)
-2. Deploy the Health Monitoring Agent, Calibration Management Agent, and Planner
-3. Use the Chat UI (CLI or web) to interact as a factory operator
+The project uses the maintained MCP Python SDK 1.x API with a `<2` bound; SDK 2.x migration is separate work. `uv.lock` is the reproducibility source. Dependabot checks Python, Actions and devcontainer dependencies; CI checks the supported Python floor and a newer interpreter.

@@ -1,177 +1,80 @@
-#!/usr/bin/env python3
-"""
-MCP Client for RAGA Robotic Arm Telemetry
-
-This client demonstrates how to connect to the RAGA MCP server and interact with the
-robotic telemetry interface.
-"""
+"""MCP SDK client for a local RAGA simulator subprocess."""
 
 import asyncio
 import json
-import logging
 import sys
-from typing import Dict, Any, List, Optional
-from datetime import datetime
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
 
-# Try to import mcp client modules
-try:
-    from mcp.client import MCPClient as BaseMCPClient
-except ImportError:
-    print("MCP client library not found. Installing...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "mcp"])
-    from mcp.client import MCPClient as BaseMCPClient
-
-# Configure logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("mcp_client")
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 
 class RAGAMCPClient:
-    """Client for interacting with the RAGA MCP Server"""
+    """Use ``async with RAGAMCPClient.connect() as client`` to own the session."""
 
-    def __init__(self, host: str = "localhost", port: int = 8000):
-        """Initialize the MCP client
+    def __init__(self, session: ClientSession):
+        self.session = session
 
-        Args:
-            host: MCP server hostname
-            port: MCP server port
-        """
-        self.host = host
-        self.port = port
-        self.client = None
-        self.server_url = f"http://{host}:{port}"
-        logger.info(
-            f"Initializing RAGA MCP client for server at {self.server_url}")
+    @classmethod
+    @asynccontextmanager
+    async def connect(cls):
+        parameters = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "src.mcp_server.genericrobotserver"],
+            cwd=str(Path(__file__).resolve().parents[2]),
+        )
+        async with stdio_client(parameters) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                yield cls(session)
 
-    async def connect(self):
-        """Connect to the MCP server"""
-        logger.info(f"Connecting to MCP server at {self.server_url}")
-        # In a real implementation, this would use the MCP client library
-        # For now, we'll simulate the connection
-        self.client = BaseMCPClient(self.server_url)
-        await self.client.initialize()
-        logger.info("Connected to MCP server successfully")
+    async def read_resource(self, uri: str) -> dict[str, Any]:
+        result = await self.session.read_resource(uri)
+        return json.loads(result.contents[0].text)
 
-    async def get_server_info(self) -> Dict[str, Any]:
-        """Get information about the MCP server
+    async def get_server_info(self) -> dict[str, Any]:
+        return await self.read_resource("server://info")
 
-        Returns:
-            Server information data
-        """
-        logger.info("Requesting server information")
-        response = await self.client.get_resource("server://info")
-        return response
+    async def get_robot_telemetry(self, factory_id: str, robot_id: str) -> dict[str, Any]:
+        return await self.read_resource(f"robots://{factory_id}/{robot_id}")
 
-    async def get_robot_telemetry(self, factory_id: str, robot_id: str) -> Dict[str, Any]:
-        """Get telemetry for a specific robot
+    async def call_tool(self, name: str, arguments: dict | None = None) -> dict[str, Any]:
+        result = await self.session.call_tool(name, arguments=arguments or {})
+        if result.isError:
+            raise RuntimeError(f"MCP tool failed: {name}")
+        payload = result.structuredContent
+        if payload is None:
+            payload = json.loads(result.content[0].text)
+        if "error" in payload:
+            raise ValueError(payload["error"]["message"])
+        return payload
 
-        Args:
-            factory_id: Factory identifier
-            robot_id: Robot identifier
+    async def update_robot_state(self, factory_id: str, robot_id: str, **updates) -> dict[str, Any]:
+        return await self.call_tool("update_robot_state", {
+            **updates, "factory_id": factory_id, "robot_id": robot_id,
+        })
 
-        Returns:
-            Robot telemetry data
-        """
-        logger.info(
-            f"Requesting telemetry for robot {robot_id} in factory {factory_id}")
-        response = await self.client.get_resource(f"robots://{factory_id}/{robot_id}")
-        return response
+    async def list_robots(self) -> dict[str, Any]:
+        return await self.call_tool("list_available_robots")
 
-    async def update_robot_state(self, factory_id: str, robot_id: str, **updates) -> Dict[str, Any]:
-        """Update state for a specific robot
+    async def get_calibration_prompt(self) -> dict[str, Any]:
+        result = await self.session.get_prompt("robot_calibration_instructions")
+        return result.model_dump(mode="json")
 
-        Args:
-            factory_id: Factory identifier
-            robot_id: Robot identifier
-            **updates: Robot state updates (joint_angles, end_effector_pose, etc.)
 
-        Returns:
-            Updated robot state
-        """
-        logger.info(
-            f"Updating state for robot {robot_id} in factory {factory_id}")
-        params = {
-            "factory_id": factory_id,
-            "robot_id": robot_id,
-            **updates
+async def main() -> None:
+    async with RAGAMCPClient.connect() as client:
+        outputs = {
+            "server": await client.get_server_info(),
+            "before": await client.get_robot_telemetry("demo_factory", "arm1"),
+            "updated": await client.update_robot_state(
+                "demo_factory", "arm1", end_effector_pose={"x": 500}),
+            "robots": await client.list_robots(),
+            "prompt": await client.get_calibration_prompt(),
         }
-        response = await self.client.call_tool("update_robot_state", **params)
-        return response
-
-    async def list_robots(self) -> Dict[str, Any]:
-        """List all available robots
-
-        Returns:
-            Robots grouped by factory
-        """
-        logger.info("Requesting list of available robots")
-        response = await self.client.call_tool("list_available_robots")
-        return response
-
-    async def get_calibration_prompt(self) -> Dict[str, Any]:
-        """Get the robot calibration instructions prompt
-
-        Returns:
-            Calibration procedure instructions
-        """
-        logger.info("Requesting calibration prompt")
-        response = await self.client.get_prompt("robot_calibration_instructions")
-        return response
-
-
-async def main():
-    """Example usage of the RAGA MCP Client"""
-    client = RAGAMCPClient()
-    try:
-        await client.connect()
-
-        # Get server information
-        server_info = await client.get_server_info()
-        print("\n==== SERVER INFO ====")
-        print(json.dumps(server_info, indent=2))
-
-        # Create some example robots
-        factory_id = "warehouse7"
-        robot_id = "arm3"
-
-        # Get robot telemetry
-        telemetry = await client.get_robot_telemetry(factory_id, robot_id)
-        print(f"\n==== TELEMETRY FOR {factory_id}/{robot_id} ====")
-        print(json.dumps(telemetry, indent=2))
-
-        # Update robot state - set position
-        new_pose = {
-            "end_effector_pose": {
-                "x": 500,
-                "y": 0,
-                "z": 1000,
-                "roll": 0,
-                "pitch": 90,
-                "yaw": 0
-            }
-        }
-        updated_state = await client.update_robot_state(factory_id, robot_id, **new_pose)
-        print(f"\n==== UPDATED STATE FOR {factory_id}/{robot_id} ====")
-        print(json.dumps(updated_state, indent=2))
-
-        # Get a list of all robots
-        robots = await client.list_robots()
-        print("\n==== AVAILABLE ROBOTS ====")
-        print(json.dumps(robots, indent=2))
-
-        # Get calibration instructions
-        calibration = await client.get_calibration_prompt()
-        print("\n==== CALIBRATION INSTRUCTIONS ====")
-        print(json.dumps(calibration, indent=2))
-
-    except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        raise
-    finally:
-        if client.client:
-            await client.client.close()
+        print(json.dumps(outputs, indent=2))
 
 
 if __name__ == "__main__":

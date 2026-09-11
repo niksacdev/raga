@@ -2,7 +2,6 @@ import abc
 from .models import TelemetryData, EndEffectorPose, GripperState, ForceTorque, GripperOpenState
 import random
 import datetime
-import math
 
 
 class TelemetryProvider(abc.ABC):
@@ -13,6 +12,8 @@ class TelemetryProvider(abc.ABC):
 
 class SimulatorTelemetryProvider(TelemetryProvider):
     def __init__(self, num_joints: int = 6):
+        if num_joints != 6:
+            raise ValueError("This simulator models exactly six joints.")
         self.num_joints = num_joints
 
     def get_telemetry(self) -> TelemetryData:
@@ -55,7 +56,7 @@ class SimulatorTelemetryProvider(TelemetryProvider):
         else:
             status_literal = 'error'
         return TelemetryData(
-            timestamp=datetime.datetime.utcnow(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
             joint_angles=joint_angles,
             end_effector_pose=pose,
             gripper_state=gripper,
