@@ -1,20 +1,17 @@
 [project]
 name = "raga"
 version = "0.1.0"
-description = "Add your description here"
+description = "Local MCP telemetry simulator for evaluating robot operator assistance"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi>=0.115.12",
-    "pydantic>=2.11.3",
-    "mcp>=1.6.0",
-    "uvicorn>=0.34.2",
-    "anyio>=4.0.0",
+    "pydantic>=2.13.5,<3",
+    "mcp>=1.30,<2",
 ]
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
-    "pytest>=8.3.5",
+    "pytest>=9.0.3",
     "pytest-asyncio>=0.26.0",
+    "pip-audit>=2.9.0",
 ]

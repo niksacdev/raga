@@ -15,11 +15,9 @@
 		}
 	},
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	"forwardPorts": [
-		6227
-	],
+	"forwardPorts": [],
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "pip3 install --user -e . && pip3 install mcp",
+	"postCreateCommand": "uv sync --locked",
 	// Set environment variables
 	"remoteEnv": {
 		"PYTHONPATH": "/workspaces/raga:${containerEnv:PYTHONPATH}"
@@ -38,7 +36,7 @@
 				"streetsidesoftware.code-spell-checker"
 			],
 			"settings": {
-				"python.defaultInterpreterPath": "/usr/local/bin/python",
+				"python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
 				"python.formatting.provider": "black",
 				"python.linting.enabled": true,
 				"python.linting.pylintEnabled": true,
